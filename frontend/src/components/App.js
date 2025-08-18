@@ -1,13 +1,28 @@
 import React, { Component } from "react";
 import { render } from "react-dom";
+import { BrowserRouter as Router, Route, Switch } from "react-router-dom";
+import HomePage from "./HomePage";
+import CreateRoomPage from "./CreateRoomPage";
+import RoomJoinPage from "./RoomJoinPage";
+import Room from "./Room";
 
-export default class App extends Component{
-    constructor(props){
-        super(props);
-    }
-    render() {
-        return <h1>Testing React Code</h1>;
-    }
+export default class App extends Component {
+  constructor(props) {
+    super(props);
+  }
+
+  render() {
+    return (
+      <Router>
+        <Switch>
+          <Route exact path="/" component={HomePage} />
+          <Route path="/create" component={CreateRoomPage} />
+          <Route path="/join" component={RoomJoinPage} />
+          <Route path="/room/:roomCode" component={Room} />
+        </Switch>
+      </Router>
+    );
+  }
 }
 
 const appDiv = document.getElementById("app");
