@@ -13,6 +13,7 @@ export default class App extends Component {
 
   render() {
     return (
+      <div className="center">
       <Router>
         <Switch>
           <Route exact path="/" component={HomePage} />
@@ -21,6 +22,7 @@ export default class App extends Component {
           <Route path="/room/:roomCode" component={Room} />
         </Switch>
       </Router>
+      </div>
     );
   }
 }
