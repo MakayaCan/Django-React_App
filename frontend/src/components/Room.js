@@ -1,6 +1,7 @@
 import React, { Component } from "react";
 import { Grid, Button, Typography } from '@mui/material';
 import CreateRoomPage from "./CreateRoomPage";
+import MusicPlayer from "./MusicPlayer";
 
 export default class Room extends Component {
     constructor(props){
@@ -10,7 +11,8 @@ export default class Room extends Component {
             guestCanPause: false,
             isHost: false,
             showSettings: false,
-            spotifyAuthenticated: false
+            spotifyAuthenticated: false,
+            song: {}
         };
         this.roomCode = this.props.match.params.roomCode;
         this.leaveButtonPressed = this.leaveButtonPressed.bind(this);
@@ -19,7 +21,16 @@ export default class Room extends Component {
         this.renderSettings = this.renderSettings.bind(this);
         this.getRoomDetails = this.getRoomDetails.bind(this);
         this.authenticateSpotify = this.authenticateSpotify.bind(this);
+        this.getCurrentSong = this.getCurrentSong.bind(this);
         this.getRoomDetails();
+    }
+
+    componentDidMount(){
+        this.interval = setInterval(this.getCurrentSong, 1000);
+    }
+
+    componentWillUnmount(){
+        clearInterval(this.interval);
     }
 
     getRoomDetails(){
@@ -40,7 +51,6 @@ export default class Room extends Component {
                 if(this.state.isHost){
                     this.authenticateSpotify();
                 }
-                
             });
     }
 
@@ -54,11 +64,23 @@ export default class Room extends Component {
                 .then((response) => response.json())
                 .then((data) => {
                     window.location.replace(data.url);
-
                 });
             }
         });
+    }
 
+    getCurrentSong() {
+        fetch('/spotify/current-song')
+            .then((response) => {
+                if (!response.ok || response.status === 204) {
+                    return {};
+                }
+                return response.json();
+            })
+            .then((data) => {
+                this.setState({ song: data });
+            })
+            .catch((err) => console.error("Error fetching song:", err));
     }
 
     leaveButtonPressed() {
@@ -75,33 +97,32 @@ export default class Room extends Component {
     updateShowSettings(value){
         this.setState({
             showSettings: value,
-
         });
     }
 
     renderSettings(){
-       return <Grid container spacing={1}>
+       return (
+            <Grid container spacing={1}>
                 <Grid item xs={12} align="center">
                     <CreateRoomPage 
                         update={true} 
-                        votesToSkip={ this.state.votesToSkip} 
+                        votesToSkip={this.state.votesToSkip} 
                         guestCanPause={this.state.guestCanPause} 
                         roomCode={this.roomCode}
                         updateCallback={this.getRoomDetails}
                     />
                 </Grid>
                 <Grid item xs={12} align="center">
-                 <Button 
-                  variant="contained"
-                  color="secondary"
-                  onClick={() => this.updateShowSettings(false)}
-                 >
-                    Close
-                  </Button>
-                
+                    <Button 
+                        variant="contained"
+                        color="secondary"
+                        onClick={() => this.updateShowSettings(false)}
+                    >
+                        Close
+                    </Button>
                 </Grid>
-
-             </Grid>;
+            </Grid>
+        );
     }
 
     renderSettingsButton(){
@@ -110,12 +131,10 @@ export default class Room extends Component {
                 <Button variant="contained" color="primary" onClick={() => this.updateShowSettings(true)}>
                     Settings
                 </Button>
-
             </Grid>
-
         );
-
     }
+
     render(){ 
         if (this.state.showSettings){
             return this.renderSettings();
@@ -127,21 +146,9 @@ export default class Room extends Component {
                         Code: {this.roomCode}
                     </Typography>
                 </Grid>
-                <Grid item xs={12} align="center">
-                    <Typography variant="h6" component="h6">
-                        Votes: {this.state.votesToSkip}
-                    </Typography>
-                </Grid>
-                <Grid item xs={12} align="center">
-                    <Typography variant="h6" component="h6">
-                        Guest Can Pause: {this.state.guestCanPause.toString()}
-                    </Typography>
-                </Grid>
-                <Grid item xs={12} align="center">
-                    <Typography variant="h6" component="h6">
-                        Host: {this.state.isHost.toString()}
-                    </Typography>
-                </Grid>
+                {this.state.song && this.state.song.title ? (
+                    <MusicPlayer {...this.state.song}/>
+                ) : null}
                 {this.state.isHost ? this.renderSettingsButton() : null}
                 <Grid item xs={12} align="center">
                     <Button 
