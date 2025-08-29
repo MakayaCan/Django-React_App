@@ -1,3 +1,4 @@
+# spotify/util.py
 from .models import SpotifyToken
 from django.utils import timezone
 from datetime import timedelta
@@ -6,12 +7,10 @@ from requests import post, put, get
 
 BASE_URL = "https://api.spotify.com/v1/me/"
 
+
 def get_user_tokens(session_id):
     """Return the SpotifyToken object for the given user/session."""
-    try:
-        return SpotifyToken.objects.filter(user=session_id).first()
-    except Exception:
-        return None
+    return SpotifyToken.objects.filter(user=session_id).first()
 
 
 def update_or_create_user_tokens(session_id, access_token, token_type, expires_in, refresh_token=None):
@@ -23,9 +22,9 @@ def update_or_create_user_tokens(session_id, access_token, token_type, expires_i
         tokens.access_token = access_token
         tokens.token_type = token_type
         tokens.expires_in = expires_at
-        if refresh_token:  # Only update if Spotify sent a new one
+        if refresh_token:
             tokens.refresh_token = refresh_token
-        tokens.save()
+        tokens.save(update_fields=["access_token", "token_type", "expires_in", "refresh_token"])
     else:
         SpotifyToken.objects.create(
             user=session_id,
@@ -37,7 +36,7 @@ def update_or_create_user_tokens(session_id, access_token, token_type, expires_i
 
 
 def is_spotify_authenticated(session_id):
-    """Check if the user is authenticated and refresh token if expired."""
+    """Check if the user is authenticated and refresh the token if expired."""
     tokens = get_user_tokens(session_id)
     if not tokens:
         return False
@@ -53,12 +52,18 @@ def refresh_spotify_token(session_id):
     if not tokens or not tokens.refresh_token:
         return False
 
-    response = post('https://accounts.spotify.com/api/token', data={
-        'grant_type': 'refresh_token',
-        'refresh_token': tokens.refresh_token,
-        'client_id': CLIENT_ID,
-        'client_secret': CLIENT_SECRET
-    })
+    try:
+        response = post(
+            'https://accounts.spotify.com/api/token',
+            data={
+                'grant_type': 'refresh_token',
+                'refresh_token': tokens.refresh_token,
+                'client_id': CLIENT_ID,
+                'client_secret': CLIENT_SECRET
+            }
+        )
+    except Exception:
+        return False
 
     if response.status_code != 200:
         return False
@@ -77,24 +82,26 @@ def refresh_spotify_token(session_id):
 
 
 def execute_spotify_api_request(session_id, endpoint, post_=False, put_=False):
-    """Make an API request to Spotify on behalf of the user."""
+    """
+    Make an API request to Spotify on behalf of the user/session.
+    Always returns a dict with either valid data or an 'error' key.
+    """
     tokens = get_user_tokens(session_id)
     if not tokens:
-        return {'error': 'No tokens found'}
+        return {'error': 'No Spotify tokens found for this user/session'}
 
-    # Refresh if expired
+    # Refresh token if expired
     if tokens.expires_in <= timezone.now():
         if not refresh_spotify_token(session_id):
-            return {'error': 'Failed to refresh token'}
-
-        tokens = get_user_tokens(session_id)  # re-fetch after refresh
+            return {'error': 'Failed to refresh Spotify token'}
+        tokens = get_user_tokens(session_id)
 
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f"Bearer {tokens.access_token}"
     }
-
     url = BASE_URL + endpoint
+
     try:
         if post_:
             response = post(url, headers=headers)
@@ -103,16 +110,44 @@ def execute_spotify_api_request(session_id, endpoint, post_=False, put_=False):
         else:
             response = get(url, headers=headers)
     except Exception as e:
-        return {'error': f'Network issue: {str(e)}'}
+        return {'error': f'Network error while calling Spotify: {str(e)}'}
 
+    # Spotify returns 204 (No Content) on some successful calls
     if response.status_code == 204:
-        return {'message': 'No content (nothing is playing)'}
+        return {'success': True, 'status': 204}
 
+    # Try parsing JSON response
     try:
-        return response.json()
+        data = response.json()
     except Exception:
         return {
-            'error': 'Issue parsing Spotify API response',
-            'status_code': response.status_code,
+            'error': 'Failed to parse Spotify API response',
+            'status': response.status_code,
             'raw': response.text
         }
+
+    if response.status_code not in (200, 201):
+        # Standardize error payload
+        return {
+            'error': data.get('error', {'message': 'Spotify API error'}),
+            'status': response.status_code
+        }
+
+    return data
+
+
+# ---- CONTROL HELPERS ----
+
+def play_song(session_id):
+    """Send a play command to Spotify for the user."""
+    return execute_spotify_api_request(session_id, "player/play", put_=True)
+
+
+def pause_song(session_id):
+    """Send a pause command to Spotify for the user."""
+    return execute_spotify_api_request(session_id, "player/pause", put_=True)
+
+
+def skip_song(session_id):
+    """Send a skip command to Spotify for the user."""
+    return execute_spotify_api_request(session_id, "player/next", post_=True)
